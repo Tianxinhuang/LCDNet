@@ -10,40 +10,12 @@ import random
 from tf_ops.emd import tf_auctionmatch
 from tf_ops.CD import tf_nndistance
 from tf_ops.sampling import tf_sampling
-from lossnet import mlp_architecture_ala_iclr_18,pclossnet,local_kernel,caloss
+from lossnet import mlp_architecture_ala_iclr_18,local_kernel,lcdloss
 from provider import shuffle_data,shuffle_points,rotate_point_cloud,jitter_point_cloud
 from dgcnn import dgcnn_kernel,dgcls_kernel
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-tf.set_random_seed(1)
-
-def getidpts(pcd,ptid,ptnum):
-    bid=tf.tile(tf.reshape(tf.range(start=0,limit=tf.shape(pcd)[0],dtype=tf.int32),[-1,1,1]),[1,ptnum,1])
-    idx=tf.concat([bid,tf.expand_dims(ptid,axis=-1)],axis=-1)
-    result=tf.gather_nd(pcd,idx)
-    return result
-def chamfer_big(pcd1, pcd2):
-    dist1, idx1, dist2, idx2 = tf_nndistance.nn_distance(pcd1, pcd2)
-    pcd12=getidpts(pcd2,idx1,pcd1.get_shape()[1].value)
-    pcd21=getidpts(pcd1,idx2,pcd2.get_shape()[1].value)
-    dist1=tf.sqrt(tf.reduce_sum(tf.square(pcd1-pcd12),axis=-1))
-    dist2=tf.sqrt(tf.reduce_sum(tf.square(pcd2-pcd21),axis=-1))
-    dist=(tf.reduce_mean(dist1)+tf.reduce_mean(dist2))/2.0
-    return dist
-def emd_func(pred,gt):
-    batch_size = pred.get_shape()[0].value
-    matchl_out, matchr_out = tf_auctionmatch.auction_match(pred, gt)
-    matched_out = tf_sampling.gather_point(gt, matchl_out)
-    dist = tf.sqrt(tf.reduce_sum((pred - matched_out) ** 2,axis=-1))
-    dist = tf.reduce_mean(dist,axis=-1)
-    
-    cens=tf.reduce_mean(pred,axis=1,keep_dims=True)
-    radius=tf.sqrt(tf.reduce_max(tf.reduce_sum((pred - cens) ** 2,axis=-1),axis=-1))
-    dist_norm = dist / radius
-
-    emd_loss = tf.reduce_mean(dist_norm)
-    return emd_loss
+#tf.set_random_seed(1)
 
 def train(args):    
     pointcloud_pl=tf.placeholder(tf.float32,[args.batch_size,args.ptnum,3],name='pointcloud_pl')
@@ -89,7 +61,7 @@ def train(args):
     loss_e,loss_d_local=lcdloss(pointcloud_pl,out,args)
 
     allvars=tf.get_collection(tf.GraphKeys.GLOBAL_VARIABLES)
-    trainvars=tf.GraphKeys.TRAINABLE_VARIABLES
+    trainvars=tf.get_collection(tf.GraphKeys.TRAINABLE_VARIABLES)
     
     #set the parameters for reconstruction networks and PCLossNet
     varge=[v for v in trainvars if 'ge' in v.name]
@@ -148,8 +120,7 @@ def train(args):
                     batch_point=shuffle_points(batch_point)
                     posis=batch_point
 
-                    posis=jitter_point_cloud(posis,args.perturb,0.2)
-                    feed_dict = {pointcloud_pl: batch_point[:,:args.ptnum,:], posi_pl:posis}
+                    feed_dict = {pointcloud_pl: batch_point[:,:args.ptnum,:]}
 
                     sess.run([trainstep[1]], feed_dict=feed_dict)
                     resi = sess.run([trainstep[0],loss_e], feed_dict=feed_dict)
@@ -160,6 +131,7 @@ def train(args):
                         
             if (i+1)%args.savestep==0:
                 save_path = saver.save(sess, os.path.join(args.savepath,'model'),global_step=i)
+
 if __name__=='__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--batch_size', type=int, default=16, help='Batch size')
