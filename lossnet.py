@@ -110,166 +110,42 @@ def mlp_architecture_ala_iclr_18(n_pc_points, bneck_size, dnum=3, bneck_post_mlp
 
     return encoder, decoder, encoder_args, decoder_args
 
-def find_diff(inwords,mlp=[64,64]):
-    words=tf.expand_dims(inwords,axis=2)
-    for i,outchannel in enumerate(mlp):
-        words=conv2d('basic_state%d'%i,words,outchannel,[1,1],padding='VALID',activation_func=None)
-        words=tf.nn.relu(words)
-    result=tf.reduce_max(words,axis=1)
-    return tf.squeeze(result,axis=1)
-#input_feat:batch*64*(3+featlen)
-#out:batch*64*64*3
-def get_auchor_point(scope,input_signal,input_feat,mlp=[64,128],mlp2=[256,256],out_num=64,out_len=3,startcen=None,out_activation=None):
-    with tf.variable_scope(scope):
-        ftnum=input_feat.get_shape()[1].value
-        ptnum=input_signal.get_shape()[1].value
-        words=tf.expand_dims(input_feat,axis=2)
-        _,startcen=sampling(int(out_num),input_signal,use_type='r')
-        words=tf.concat([tf.expand_dims(startcen,axis=2),tf.tile(words,[1,tf.shape(startcen)[1],1,1])],axis=-1)
-        for i,outchannel in enumerate(mlp2):
-            words=conv2d('start_state%d'%i,words,outchannel,[1,1],padding='VALID',activation_func=None)
-            words=tf.nn.relu(words)
-        #wordsfeat=words
-        words=tf.reduce_mean(words,axis=1,keepdims=True)
-        words=tf.concat([tf.expand_dims(startcen,axis=2),tf.tile(words,[1,tf.shape(startcen)[1],1,1])],axis=-1)
-        for i,outchannel in enumerate(mlp):
-            words=conv2d('basic_state%d'%i,words,outchannel,[1,1],padding='VALID',activation_func=None)
-            words=tf.nn.relu(words)
-        words=conv2d('basic_stateoutg',words,out_len,[1,1],padding='VALID',activation_func=out_activation)
-        move=tf.squeeze(words,axis=2)[:,:,:3]
-        newcen=tf.expand_dims(move+startcen,axis=1)
-        words=tf.concat([newcen,tf.reshape(words[:,:,:,3:],[-1,1,newcen.get_shape()[2].value,1])],axis=-1)
-        return words#,move
-def get_auchor_fc(scope,input_signal,input_feat,mlp=[64,128],mlp2=[256,256],out_num=64,out_len=3,startcen=None,out_activation=None):
-    with tf.variable_scope(scope):
-        ptnum=input_feat.get_shape()[1].value
-        words=tf.expand_dims(input_feat,axis=2)
-        for i,outchannel in enumerate(mlp):
-            words=conv2d('basic_state%d'%i,words,outchannel,[1,1],padding='VALID',activation_func=None)
-            words=tf.nn.relu(words)
-        words=conv2d('basic_stateoutg',words,out_num*out_len,[1,1],padding='VALID',activation_func=out_activation)
-        words=tf.reshape(words,[-1,ptnum,out_num,out_len])
-    return words#,words
-#input_pts:batch*2048*1*3
-#auchor_pts:batch*1*64*3
-def auchor_feat_point(input_feat,input_pts,auchor_pts,augment=True):
-    auchor_pts,auchor_rs=auchor_pts[:,:,:,:3],auchor_pts[:,:,:,3:]
-    vecs=input_pts-auchor_pts
-    ptnum=input_pts.get_shape()[1].value
-    anum=auchor_pts.get_shape()[2].value
-        
-    inpts=input_pts
-    apts=auchor_pts
-    ars=auchor_rs
-
-    dist=tf.sqrt(1e-4+tf.reduce_sum(tf.square(inpts)+\
-             tf.square(apts)-2*inpts*apts,axis=-1,keepdims=True))-0.01
-    featvec=None
-    #if use_gradient:
-    rawratio=tf.exp(-dist/(0.01+tf.square(ars)))
-    rsum=tf.reduce_sum(rawratio,axis=[1],keepdims=True)
-    ratio=rawratio/(1e-8+rsum)
-    if augment:
-        trnum=inpts.get_shape()[1].value/apts.get_shape()[2].value
-    else:
-        trnum=1.0
-    #print(trnum)
-    #assert False
-    featvec1=trnum*tf.reduce_sum(inpts*ratio,axis=1)-trnum*(1-1e-8/(1e-8+tf.squeeze(rsum,[1])))*tf.squeeze(apts,[1])
-    featvec1=tf.reshape(featvec1,[-1,1,anum,3])
-    return dist,featvec1
-def local_loss_net(input_signal,all_feat,cennum=128,centype='lnsa',rawmask=None,activation_func=tf.nn.sigmoid,augment=True):
-    with tf.variable_scope('local_loss'):
-        ptnum=input_signal.get_shape()[1].value
-        feat_length=input_signal.get_shape()[-1].value
-        gfeat=all_feat
-        gfeat=tf.expand_dims(gfeat,axis=1)
-        auchor_pts=None
-        if rawmask is not None:
-            auchor_pts=rawmask
-
-        if auchor_pts is None:
-            if centype is 'lnsa':
-                gauchor_pts=get_auchor_point('auchor_layerg',input_signal,gfeat,mlp=[128,64],out_num=cennum,out_len=4,startcen=None,out_activation=None)#88
-            elif centype is 'lnfc':
-                gauchor_pts=get_auchor_fc('auchor_layerg',input_signal,gfeat,mlp=[256,256,256],out_num=128,out_len=4,startcen=None,out_activation=None)
-            auchor_pts=gauchor_pts
-        dist,feat_vec=auchor_feat_point(gfeat,tf.expand_dims(input_signal,axis=2),auchor_pts,augment=augment)
-        word=feat_vec
-        reverse_word=tf.reduce_mean(tf.reduce_mean(tf.reduce_min(dist[:,:,:int(cennum*7/8),:],axis=-2),axis=1),axis=1,keepdims=True)\
-                +0.1*tf.reduce_mean(tf.reduce_max(tf.square(auchor_pts[:,:,:,3:]),axis=-1),axis=-1)#56
-        lr=0.1*tf.reduce_mean(tf.reduce_max(tf.square(auchor_pts[:,:,:,3:]),axis=-1),axis=-1)
-        rawmask=auchor_pts
-    return word,reverse_word,rawmask,lr
-def pclossnet(scope,inpts,out,centype='lnsa',augment=True,BATCH_SIZE=16):
-    
-    with tf.variable_scope(scope):
-        with tf.variable_scope('1ad'):
-            gindifval=find_diff(inpts,mlp=[64,128])
-        with tf.variable_scope('1ad',reuse=True):
-            goutdifval=find_diff(out,mlp=[64,128])
-        gdifval=tf.concat([gindifval,goutdifval],axis=-1)
-        with tf.variable_scope('2ad'):
-            inlocal,rinlocal,maxinlocal,lr=local_loss_net(inpts,gdifval,cennum=128,centype=centype,augment=augment)
-        with tf.variable_scope('2ad',reuse=True):
-            outlocal,routlocal,maxoutlocal,_=local_loss_net(out,gdifval,rawmask=maxinlocal,centype=centype,augment=augment)
-        ginlocal=inlocal
-        goutlocal=outlocal
-        ginlocals=tf.reshape(ginlocal,[BATCH_SIZE,-1,3])
-        goutlocals=tf.reshape(goutlocal,[BATCH_SIZE,-1,3])
-        local_loss=tf.reduce_mean(tf.sqrt(1e-6+tf.reduce_sum(tf.reduce_sum(tf.square(ginlocals-goutlocals),axis=[-1]),axis=-1))-0.001)
-
-        rlossin=tf.reduce_mean(rinlocal)
-        rlossout=tf.reduce_mean(routlocal)
-        sg_loss_e=local_loss
-
-        loss_cons=rlossin+rlossout#////////
-        loss_e=sg_loss_e+0.01*rlossout#0.01*tf.reduce_mean(routlocal+lr)
-        loss_d_local=-tf.log(local_loss+1e-5)+1*loss_cons#/////////
-
-    return loss_e,loss_d_local
-
-#To extract and aggregate representations
-def ca_kernel(input_signal,n_filter=[64, 128, 128, 256, 128],activation_func=tf.nn.relu,pooling='maxmean',secword=None,normal=False):
-    encoder = encoder_with_convs_and_symmetry
-    enc_args = {'n_filters': n_filter,
-                    'filter_sizes': [1],
-                    'strides': [1],
-                    'b_norm': False,
-                    'verbose': True
-                    }
-    words=encoder(input_signal,n_filters=enc_args['n_filters'],filter_sizes=enc_args['filter_sizes'],symmetry=None,non_linearity=activation_func,strides=enc_args['strides'],b_norm=enc_args['b_norm'],verbose=enc_args['verbose'])
-    if pooling is 'max':
-        word=tf.reduce_max(words,axis=1)
-    elif pooling is 'maxmean':
-        maxword=tf.reduce_max(words,axis=1,keepdims=True)
-        meanword=tf.reduce_mean(words,axis=1,keepdims=True)
-        minword=tf.reduce_min(words,axis=1,keepdims=True)
-        if secword is None:
-            #secword=tf.square(word-meanword)/2
-            secword=tf.concat([maxword,meanword],axis=-1)
-            secword=tf.expand_dims(secword,axis=1)
-            for i,outchannel in enumerate([128,128]):
-                secword=conv2d('sec_state%d'%i,secword,outchannel,[1,1],padding='VALID',activation_func=tf.nn.leaky_relu)
-            secword=conv2d('sec_stateoutg',secword,maxword.get_shape()[-1].value,[1,1],padding='VALID',activation_func=None)
-            secword=tf.square(secword)
-            secword=tf.squeeze(secword,[1])
-        else:
-            luc,secword=secword
-        ws=tf.square(words-maxword)
-        cws=ws
-        luc=tf.reduce_mean(secword)
-        ws=tf.exp(-cws/(secword+1e-5))/tf.reduce_sum(tf.exp(-cws/(secword+1e-5)),axis=1,keepdims=True)
-        word=tf.reduce_sum(words*ws,axis=1)
-        return word, [luc,secword]
-    else:
-        word=tf.reduce_mean(words,axis=1)
-    maxword=tf.reduce_max(words,axis=1)
-    if normal:
-        word=word/(tf.reduce_sum(word,axis=-1,keepdims=True)+1e-5)
-    return word,maxword
 
 from tf_ops.CD import tf_nndistance
+def getidpts(pcd,ptid,ptnum):
+    bid=tf.tile(tf.reshape(tf.range(start=0,limit=tf.shape(pcd)[0],dtype=tf.int32),[-1,1,1]),[1,ptnum,1])
+    idx=tf.concat([bid,tf.expand_dims(ptid,axis=-1)],axis=-1)
+    result=tf.gather_nd(pcd,idx)
+    return result
+def get_weight_variable(shape,stddev,name,regularizer=tf.contrib.layers.l2_regularizer(0.0001)):
+    #print(shape)
+    weight = tf.get_variable(name=name,shape=shape,initializer=tf.contrib.layers.xavier_initializer())
+    tf.summary.histogram(name+'/weights',weight)
+    if regularizer != None:
+        tf.add_to_collection('losses', regularizer(weight))
+    return weight
+def get_bias_variable(shape,value,name):
+    bias = tf.get_variable(name, shape, initializer=tf.constant_initializer(0.0), dtype=tf.float32)
+    return bias
+def conv2d(scope,inputs,num_outchannels,kernel_size,stride=[1,1],padding='SAME',stddev=1e-3,use_bnorm=False,activation_func=tf.nn.relu):
+    with tf.variable_scope(scope):
+        kernel_h,kernel_w=kernel_size
+        num_inchannels=inputs.get_shape()[-1].value
+        kernel_shape=[kernel_h,kernel_w,num_inchannels,num_outchannels]
+        kernel=get_weight_variable(kernel_shape,stddev,'weights')
+        stride_h,stride_w=stride
+        outputs=tf.nn.conv2d(inputs,kernel,[1,stride_h,stride_w,1],padding=padding)
+        bias = get_bias_variable([num_outchannels],0,'biases')
+        outputs=tf.nn.bias_add(outputs,bias)
+        if use_bnorm:
+            outputs=tf.contrib.layers.batch_norm(outputs,
+                                      center=True, scale=True,
+                                      updates_collections=None,
+                                      is_training=True,
+                                      scope='bn')
+        if activation_func!=None:
+            outputs=activation_func(outputs)
+    return outputs
 def chamfer_wei(pcd1, pcd2, w1, w2):
     dist1, idx1, dist2, idx2 = tf_nndistance.nn_distance(pcd1, pcd2)
     pcd12=getidpts(pcd2,idx1,pcd1.get_shape()[1].value)
