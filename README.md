@@ -1,5 +1,4 @@
-# LCDLoss
-[PRL'23] The codes for Learnable Chamfer Distance for Point Cloud Reconstruction published in Pattern Recognition Letters.
+# Codes for Learnable Chamfer Distance for Point Cloud Reconstruction
 
 ## Environment
 * TensorFlow 1.13.1
