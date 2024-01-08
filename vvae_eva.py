@@ -8,7 +8,6 @@ from tf_ops.CD import tf_nndistance
 import copy
 import random
 import sys
-import open3d as o3d
 from dgcnn import dgcnn_kernel,dgcls_kernel
 from tf_ops.sampling import tf_sampling
 from tf_ops.grouping import tf_grouping
@@ -17,15 +16,6 @@ from lossnet import sampling,mlp_architecture_ala_iclr_18,local_kernel
 from provider import shuffle_points,jitter_point_cloud 
 import argparse
 
-os.environ["CUDA_VISIBLE_DEVICES"]="0"
-def getnormal(data):
-    pcd = o3d.geometry.PointCloud()
-    pcd.points = o3d.utility.Vector3dVector(data)
-    pcd.estimate_normals(search_param=o3d.geometry.KDTreeSearchParamKNN(knn=3))
-    normals=np.array(pcd.normals)
-    #normals=normals/np.sqrt(np.sum(np.square(normals),axis=-1,keepdims=True))
-    result=np.concatenate([np.array(pcd.points),normals],axis=-1)
-    return result
 def emd_func(pred,gt):
     batch_size = pred.get_shape()[0].value
     matchl_out, matchr_out = tf_auctionmatch.auction_match(pred, gt)
@@ -187,6 +177,8 @@ def evaluate(args):
         myvar=[v for v in var if v.name.split(':')[0]!='is_training']
         ivar=[v for v in var if v.name.split(':')[0]=='is_training']
         saver=tf.train.Saver(var_list=myvar)
+
+        saver.restore(sess, tf.train.latest_checkpoint(args.savepath))
 
         from tflearn import is_training
         is_training(False, session=sess)
