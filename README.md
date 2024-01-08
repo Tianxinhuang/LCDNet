@@ -62,4 +62,4 @@ Python3 vvae_eva.py
 
 The trained weight files should be provided by the (`--savepath`) parameter to evaluate the performances.
 
-Here, we also provide [weights](https://drive.google.com/file/d/1PaKusaibFG72IRmrRXm5oAQ4XEk9Z2lI/view?usp=sharing) of the reconstruction network AE pre-trained on ShapeNet Part dataset. To evaluate its performance, just download and unzip it, then change the savepath the parameter.
+Here, we also provide [weights](https://drive.google.com/file/d/1PaKusaibFG72IRmrRXm5oAQ4XEk9Z2lI/view?usp=sharing) of the reconstruction network AE pre-trained on ShapeNet Part dataset. To evaluate its performance, just download and unzip it, then set its folder as savepath.
