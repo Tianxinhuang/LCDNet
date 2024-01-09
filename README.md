@@ -51,7 +51,12 @@ For the reconstruction task,
 Python3 vv_lcd.py
 ```
 
-Note that the paths of data should be edited through the (`--filepath`) parameter according to your setting.
+Note that the paths of data should be edited through the (`--filepath`) parameter according to your setting. For example, if we use the download dataset (`./objdata/ShapeNet_part`), the training command would be
+
+```
+Python3 vv_lcd.py --filepath ./objdata/ShapeNet_part
+```
+
 
 3. Test
 
@@ -62,4 +67,10 @@ Python3 vvae_eva.py
 
 The trained weight files should be provided by the (`--savepath`) parameter to evaluate the performances.
 
-Here, we also provide [weights](https://drive.google.com/file/d/1PaKusaibFG72IRmrRXm5oAQ4XEk9Z2lI/view?usp=sharing) of the reconstruction network AE pre-trained on ShapeNet Part dataset. To evaluate its performance, just download and unzip it, then set its folder as savepath.
+Here, we also provide [weights](https://drive.google.com/file/d/1PaKusaibFG72IRmrRXm5oAQ4XEk9Z2lI/view?usp=sharing) of the reconstruction network AE pre-trained on ShapeNet Part dataset. To evaluate its performance, just download and unzip it, then set its folder as savepath#. If the dataset and weights are put in (`./objdata/ShapeNet_part`) and (`./pnae`), respectively, the command would be
+
+```
+Python3 vvae_eva.py --filepath ./objdata/ShapeNet_part --savepath ./pnae
+```
+
+
